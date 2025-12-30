@@ -1,0 +1,81 @@
+import csv
+import hashlib
+import os
+import subprocess
+from datetime import datetime
+from typing import List
+
+import requests
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from qdrant_client import QdrantClient
+from qdrant_client.http.models import (
+    Distance,
+    VectorParams,
+    PointStruct,
+    Filter,
+    FieldCondition,
+    MatchAny,
+    MatchValue,
+)
+
+QDRANT_URL = os.getenv("QDRANT_URL", "http://127.0.0.1:6333")
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
+OLLAMA_MODEL_EMBED = os.getenv("OLLAMA_MODEL_EMBED", "nomic-embed-text:latest")
+OLLAMA_MODEL_CHAT = os.getenv("OLLAMA_MODEL_CHAT", "qwen2.5:14b")
+
+COLLECTION = os.getenv("QDRANT_COLLECTION", "irongate_chunks")
+
+CHUNK_SIZE = 900
+CHUNK_OVERLAP = 150
+
+app = FastAPI(title="IronGate Prototype API")
+qdrant = QdrantClient(url=QDRANT_URL)
+
+
+@app.get("/health")
+"/opt/irongate"
+    metadata_csv: str = "demo_metadata.csv"
+
+
+class ChatRequest(BaseModel):
+    user_id: str
+    role: str
+    matter_id: str
+    message: str
+    top_k: int = 6
+
+
+def ensure_collection(dim: int = 768) -> None:
+    existing = [c.name for c in qdrant.get_collections().collections]
+    if COLLECTION in existing:
+        return
+    qdrant.create_collection(
+        collection_name=COLLECTION,
+        vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
+    )
+
+
+def pdf_to_text(pdf_path: str) -> str:
+    if not os.path.exists(pdf_path):
+        raise FileNotFoundError(pdf_path)
+    result = subprocess.run(
+        ["pdftotext", "-layout", pdf_path, "-"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"pdftotext failed: {result.stderr[:300]}")
+    return result.stdout.strip()
+
+
+def chunk_text(text: str) -> List[str]:
+    text = " ".join(text.split())
+    if ndef health():
+    return {"ok": True, "time": datetime.utcnow().isoformat()}
+
+
+class IngestFromMetadataRequest(BaseModel):
+    base_dir: str = 
