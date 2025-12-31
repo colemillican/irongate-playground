@@ -4,6 +4,10 @@ import os
 import subprocess
 from datetime import datetime
 from typing import List
+from fastapi import Depends
+from api.auth import get_current_user, UserIdentity
+from api.audit import append_audit_event
+from typing import List
 
 import requests
 from fastapi import FastAPI, HTTPException
@@ -32,6 +36,13 @@ CHUNK_OVERLAP = 150
 app = FastAPI(title="IronGate Prototype API")
 qdrant = QdrantClient(url=QDRANT_URL)
 
+@app.get("/whoami")
+def whoami(user: UserIdentity = Depends(get_current_user)):
+    return {
+        "user_id": user.user_id,
+        "roles": user.roles,
+        "allowed_matters": user.allowed_matters,
+    }
 
 @app.get("/health")
 def health():
@@ -42,11 +53,8 @@ class IngestFromMetadataRequest(BaseModel):
     base_dir: str = "/opt/irongate"
     metadata_csv: str = "demo_metadata.csv"
 class ChatRequest(BaseModel):
-    user_id: str
-    role: str
     matter_id: str
     message: str
-    top_k: int = 5
 def ensure_collection(dim: int = 768) -> None:
     existing = [c.name for c in qdrant.get_collections().collections]
     if COLLECTION in existing:
@@ -109,11 +117,11 @@ def ollama_chat(system: str, user: str, context: str) -> str:
     if r.status_code != 200:
         raise RuntimeError(f"Ollama generate failed: {r.status_code} {r.text[:200]}")
     return r.json().get("response", "").strip()
-def matter_and_role_filter(matter_id: str, role: str) -> Filter:
+def matter_and_roles_filter(matter_id: str, roles: List[str]) -> Filter:
     return Filter(
         must=[
             FieldCondition(key="matter_id", match=MatchValue(value=matter_id)),
-            FieldCondition(key="allowed_roles", match=MatchAny(any=[role])),
+            FieldCondition(key="allowed_roles", match=MatchAny(any=roles)),
         ]
     )
 
@@ -177,53 +185,60 @@ def ingest_from_metadata(req: IngestFromMetadataRequest):
 
     return {"ingested_docs": ingested, "collection": COLLECTION}
 @app.post("/chat")
-def chat(req: ChatRequest):
+def chat(req: ChatRequest, user: UserIdentity = Depends(get_current_user)):
+    # AuthZ: user must be allowed to access this matter
+    if req.matter_id not in user.allowed_matters:
+        raise HTTPException(status_code=403, detail="User not authorized for this matter")
+
+    # Qdrant filter derived from server-side identity
+    qfilter = matter_and_roles_filter(req.matter_id, user.roles)
+
+    # Embed query (use your existing embed function)
     query_vec = ollama_embed([req.message])[0]
-    flt = matter_and_role_filter(req.matter_id, req.role)
 
     hits = qdrant.search(
-        collection_name=COLLECTION,
+        collection_name=COLLECTION_NAME,
         query_vector=query_vec,
-        limit=req.top_k,
-        query_filter=flt,
+        limit=TOP_K,
+        query_filter=qfilter,
         with_payload=True,
     )
 
-    if not hits:
-        system = (
-            "You are IronGate, a private law-firm assistant. "
-            "If you do not have sufficient permitted sources, say so. Do not fabricate."
-        )
-        answer = ollama_chat(system, req.message, context="(no permitted sources found)")
-        return {"answer": answer, "citations": [], "sources_accessed": []}
-    citations = []
     context_lines = []
-    sources_accessed = []
-    for h in hits:
-        p = h.payload
-        citations.append(
-            {
-                "title": p["title"],
-                "path": p["path"],
-                "chunk_index": p["chunk_index"],
-                "snippet": p["text"][:350],
-            }
-        )
-        context_lines.append(f"[{p['title']} | chunk {p['chunk_index']}]\n{p['text']}\n")
-        sources_accessed.append({"doc_id": p["doc_id"], "chunk_index": p["chunk_index"]})
+    citations = []
+    retrieved = []
+
+    for i, h in enumerate(hits):
+        payload = h.payload or {}
+        title = payload.get("title", "Untitled")
+        doc_id = payload.get("doc_id", "")
+        chunk_index = payload.get("chunk_index", i)
+        text = payload.get("text", "")
+
+        context_lines.append(f"[{title} | chunk {chunk_index}] {text}")
+        citations.append({"title": title, "chunk": chunk_index, "doc_id": doc_id})
+        retrieved.append({"doc_id": doc_id, "title": title, "chunk": chunk_index})
 
     system = (
-        "You are IronGate, a private law-firm assistant.\n"
-        "Rules:\n"
-        "1) Use ONLY the provided context for case-specific facts.\n"
-        "2) If the context does not contain the answer, say what is missing.\n"
-        "3) Cite as [Title | chunk N].\n"
-        "4) Keep answers concise and professional."
+        "You are IronGate, a private assistant.\n"
+        "Use ONLY the provided context for case-specific facts.\n"
+        "If the context is insufficient, say what is missing.\n"
+        "Cite sources as [Title | chunk N]."
     )
+
     answer = ollama_chat(system, req.message, context="\n\n".join(context_lines))
-    return {
-        "answer": answer,
-        "citations": citations,
-        "sources_accessed": sources_accessed,
-    }
+
+    append_audit_event(
+        {
+            "event": "chat",
+            "user_id": user.user_id,
+            "roles": user.roles,
+            "matter_id": req.matter_id,
+            "query": req.message,
+            "retrieved": retrieved,
+            "citations": citations
+        }
+    )
+
+    return {"answer": answer, "citations": citations}
 
