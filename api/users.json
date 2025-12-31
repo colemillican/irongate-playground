@@ -1,0 +1,14 @@
+﻿{
+  "keys": {
+    "DEV_ADMIN_KEY_CHANGE_ME": {
+      "user_id": "cole-admin",
+      "roles": ["admin", "attorney"],
+      "allowed_matters": ["matter_A", "matter_B"]
+    },
+    "DEV_STAFF_KEY_CHANGE_ME": {
+      "user_id": "staff-1",
+      "roles": ["paralegal"],
+      "allowed_matters": ["matter_A"]
+    }
+  }
+}
