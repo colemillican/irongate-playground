@@ -1,9 +1,15 @@
+# Python
 __pycache__/
 *.pyc
-.env
-.env.*
-.qdrant/
-data/
-models/
-*.log
+*.pyo
 
+# Virtual env
+.venv/
+venv/
+
+# Backups
+*.bak
+*.broken
+
+# Logs
+logs/
