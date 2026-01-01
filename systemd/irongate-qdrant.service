@@ -1,0 +1,15 @@
+[Unit]
+Description=IronGate Qdrant
+After=network.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=2
+WorkingDirectory=/workspace/irongate/qdrant
+ExecStart=/workspace/irongate/qdrant/qdrant
+StandardOutput=append:/workspace/irongate/logs/qdrant.log
+StandardError=append:/workspace/irongate/logs/qdrant.log
+
+[Install]
+WantedBy=multi-user.target

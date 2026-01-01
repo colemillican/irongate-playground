@@ -1,0 +1,15 @@
+[Unit]
+Description=IronGate FastAPI
+After=network.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=2
+WorkingDirectory=/root/irongate-playground
+ExecStart=/root/irongate-playground/.venv/bin/uvicorn api.main:app --host 0.0.0.0 --port 8000
+StandardOutput=append:/workspace/irongate/logs/uvicorn.log
+StandardError=append:/workspace/irongate/logs/uvicorn.log
+
+[Install]
+WantedBy=multi-user.target

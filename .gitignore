@@ -13,3 +13,13 @@ venv/
 
 # Logs
 logs/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Logs / runtime
+*.log
+logs/
+pids/

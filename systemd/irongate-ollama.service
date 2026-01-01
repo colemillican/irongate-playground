@@ -1,0 +1,15 @@
+[Unit]
+Description=IronGate Ollama
+After=network.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=2
+Environment=OLLAMA_MODELS=/workspace/irongate/ollama_models
+ExecStart=/usr/local/bin/ollama serve
+StandardOutput=append:/workspace/irongate/logs/ollama.log
+StandardError=append:/workspace/irongate/logs/ollama.log
+
+[Install]
+WantedBy=multi-user.target
